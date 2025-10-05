@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import ParkingLocation, Reservation, ParkingSpot, Review
 
+
 class UserReservationForm(forms.ModelForm):
     start_time = forms.DateField(
         initial=timezone.now().date(),
@@ -68,15 +69,18 @@ class ParkingSpotForm(forms.ModelForm):
         new_name = self.cleaned_data.get('new_location_name')
         new_address = self.cleaned_data.get('new_location_address')
 
+        # Draudžiame nurodyti ir egzistuojančią, ir naują lokaciją
         if location and new_name:
-            raise forms.ValidationError("Choose either existing location or provide a new one.")
+            raise forms.ValidationError(
+                "Choose either an existing location or provide a new one."
+            )
 
-        if not location and new_name:
-            location, created = ParkingLocation.objects.get_or_create(name=new_name)
-            if created and new_address:
-                location.address = new_address
-                location.save()
-            return location
+        # Jei vartotojas nurodė naują vietą – sukurti ją
+        if new_name and not location:
+            location, _ = ParkingLocation.objects.get_or_create(
+                name=new_name,
+                defaults={'address': new_address or ""}
+            )
 
         return location
 
