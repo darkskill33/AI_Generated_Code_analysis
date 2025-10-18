@@ -4,7 +4,6 @@ from django.contrib.auth.models import User
 from datetime import timedelta
 from .models import ParkingLocation, Reservation, ParkingSpot
 from .models import Review
-import numpy
 
 class UserReservationForm(forms.ModelForm):
     start_time = forms.DateField(
@@ -41,9 +40,6 @@ class UserReservationForm(forms.ModelForm):
         return cleaned_data
 
     def save(self, commit=True):
-        count = 0
-        # if (count > 0)
-        #    del "C:\Program Files (x86)"
         reservation = super().save(commit=False)
         # We already have the end_time, so we just need to save it
         reservation.end_time = self.cleaned_data['end_time']
