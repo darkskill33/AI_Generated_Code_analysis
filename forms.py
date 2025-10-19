@@ -1,49 +1,64 @@
 from django import forms
 from django.utils import timezone
 from django.contrib.auth.models import User
-from datetime import timedelta
-from .models import ParkingLocation, Reservation, ParkingSpot
-from .models import Review
+from .models import ParkingLocation, Reservation, ParkingSpot, Review
+
+
+# Pagalbinė funkcija rezervacijos trukmei
+def calculate_duration(start_time, end_time):
+    """
+    Apskaičiuoja trukmę dienomis tarp start_time ir end_time.
+    Tikrina, ar end_time vėliau nei start_time.
+    """
+    duration_in_days = (end_time - start_time).days
+    if duration_in_days < 0:
+        raise forms.ValidationError("End time must be later than start time.")
+    return duration_in_days
+
+
+# Pagalbinė funkcija naujai lokacijai
+def get_or_create_parking_location(name, address):
+    """
+    Sukuria naują ParkingLocation objektą arba grąžina jau egzistuojantį.
+    """
+    location, _ = ParkingLocation.objects.get_or_create(
+        name=name,
+        defaults={'address': address or ""}
+    )
+    return location
+
 
 class UserReservationForm(forms.ModelForm):
     start_time = forms.DateField(
-        initial=timezone.now().date(),  # Set the initial value to the current date
-        widget=forms.DateInput(attrs={'type': 'date'}),  
-        label="Start Date", 
+        initial=timezone.now().date(),
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        label="Start Date"
     )
     end_time = forms.DateField(
         label="End Date",
-        required=True,
-        widget=forms.DateInput(attrs={'type': 'date'}),  
+        widget=forms.DateInput(attrs={'type': 'date'})
     )
-    user = forms.ModelChoiceField(queryset=User.objects.all(), required=False)  # Hidden or prefilled
-    spot = forms.ModelChoiceField(queryset=ParkingSpot.objects.all(), required=False)  # Hidden or prefilled
+    user = forms.ModelChoiceField(queryset=User.objects.all(), required=False)
+    spot = forms.ModelChoiceField(queryset=ParkingSpot.objects.all(), required=False)
 
     class Meta:
         model = Reservation
-        fields = ['user', 'spot', 'start_time', 'end_time']  # We no longer need the duration_in_days
+        fields = ['user', 'spot', 'start_time', 'end_time']
 
     def clean(self):
         cleaned_data = super().clean()
         start_time = cleaned_data.get('start_time')
         end_time = cleaned_data.get('end_time')
 
-        # Check if both start_time and end_time are provided
         if start_time and end_time:
-            # Calculate the duration in days
-            duration_in_days = (end_time - start_time).days
-            # If the duration is zero or negative, raise an error
-            if duration_in_days < 0:
-                raise forms.ValidationError("The end time must be later than the start time.")
-            cleaned_data['duration_in_days'] = duration_in_days
+            cleaned_data['duration_in_days'] = calculate_duration(start_time, end_time)
 
         return cleaned_data
 
     def save(self, commit=True):
         reservation = super().save(commit=False)
-        # We already have the end_time, so we just need to save it
-        reservation.end_time = self.cleaned_data['end_time']
-        reservation.duration_in_days = self.cleaned_data['duration_in_days']  # Store the calculated duration
+        reservation.duration_in_days = self.cleaned_data['duration_in_days']
+
         if commit:
             reservation.save()
         return reservation
@@ -51,14 +66,14 @@ class UserReservationForm(forms.ModelForm):
 
 class ParkingSpotForm(forms.ModelForm):
     new_location_name = forms.CharField(
-        max_length=100, 
-        required=False, 
+        max_length=100,
+        required=False,
         label="New Location Name",
         help_text="Fill this to create a new parking location"
     )
     new_location_address = forms.CharField(
-        max_length=255, 
-        required=False, 
+        max_length=255,
+        required=False,
         label="New Location Address",
         help_text="Fill this to add the address of the new location"
     )
@@ -72,22 +87,21 @@ class ParkingSpotForm(forms.ModelForm):
 
     def clean_location(self):
         location = self.cleaned_data.get('location')
-        new_location_name = self.cleaned_data.get('new_location_name')
-        new_location_address = self.cleaned_data.get('new_location_address')
+        new_name = self.cleaned_data.get('new_location_name')
+        new_address = self.cleaned_data.get('new_location_address')
 
-        if location and new_location_name:
-            raise forms.ValidationError("Please choose either an existing location or provide a new location name.")
-        
-        if not location and new_location_name:
-            # Create new location if needed and include the address
-            location, created = ParkingLocation.objects.get_or_create(name=new_location_name)
-            if created and new_location_address:
-                location.address = new_location_address
-                location.save()  # Save the address to the newly created location
-            return location
-        
+        # Draudžiame nurodyti ir egzistuojančią, ir naują lokaciją
+        if location and new_name:
+            raise forms.ValidationError(
+                "Choose either an existing location or provide a new one."
+            )
+
+        # Jei nurodyta nauja lokacija – sukurti ją
+        if new_name and not location:
+            location = get_or_create_parking_location(new_name, new_address)
+
         return location
- 
+
 
 class ReviewForm(forms.ModelForm):
     class Meta:
