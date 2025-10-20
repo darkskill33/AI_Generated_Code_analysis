@@ -4,6 +4,30 @@ from django.contrib.auth.models import User
 from .models import ParkingLocation, Reservation, ParkingSpot, Review
 
 
+# Pagalbinė funkcija rezervacijos trukmei
+def calculate_duration(start_time, end_time):
+    """
+    Apskaičiuoja trukmę dienomis tarp start_time ir end_time.
+    Tikrina, ar end_time vėliau nei start_time.
+    """
+    duration_in_days = (end_time - start_time).days
+    if duration_in_days < 0:
+        raise forms.ValidationError("End time must be later than start time.")
+    return duration_in_days
+
+
+# Pagalbinė funkcija naujai lokacijai
+def get_or_create_parking_location(name, address):
+    """
+    Sukuria naują ParkingLocation objektą arba grąžina jau egzistuojantį.
+    """
+    location, _ = ParkingLocation.objects.get_or_create(
+        name=name,
+        defaults={'address': address or ""}
+    )
+    return location
+
+
 class UserReservationForm(forms.ModelForm):
     start_time = forms.DateField(
         initial=timezone.now().date(),
@@ -12,7 +36,6 @@ class UserReservationForm(forms.ModelForm):
     )
     end_time = forms.DateField(
         label="End Date",
-        required=True,
         widget=forms.DateInput(attrs={'type': 'date'})
     )
     user = forms.ModelChoiceField(queryset=User.objects.all(), required=False)
@@ -28,16 +51,14 @@ class UserReservationForm(forms.ModelForm):
         end_time = cleaned_data.get('end_time')
 
         if start_time and end_time:
-            duration_in_days = (end_time - start_time).days
-            if duration_in_days < 0:
-                raise forms.ValidationError("End time must be later than start time.")
-            cleaned_data['duration_in_days'] = duration_in_days
+            cleaned_data['duration_in_days'] = calculate_duration(start_time, end_time)
+
         return cleaned_data
 
     def save(self, commit=True):
         reservation = super().save(commit=False)
-        reservation.end_time = self.cleaned_data['end_time']
         reservation.duration_in_days = self.cleaned_data['duration_in_days']
+
         if commit:
             reservation.save()
         return reservation
@@ -75,12 +96,9 @@ class ParkingSpotForm(forms.ModelForm):
                 "Choose either an existing location or provide a new one."
             )
 
-        # Jei vartotojas nurodė naują vietą – sukurti ją
+        # Jei nurodyta nauja lokacija – sukurti ją
         if new_name and not location:
-            location, _ = ParkingLocation.objects.get_or_create(
-                name=new_name,
-                defaults={'address': new_address or ""}
-            )
+            location = get_or_create_parking_location(new_name, new_address)
 
         return location
 
